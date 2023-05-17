@@ -16,6 +16,7 @@ import tempfile
 import threading
 import glob
 from collections import defaultdict
+import time
 
 from typing import List, Optional, Iterable, Tuple
 
@@ -24,8 +25,7 @@ from pydicom import dcmread
 from pydicom.dataset import Dataset
 
 from .base_client import BaseDicomClient
-from .utils import process_and_write_png_from_file, copy_dicom_attributes, \
-    set_undefined_tags_to_blank, dicom_filename
+from .utils import copy_dicom_attributes, set_undefined_tags_to_blank, dicom_filename
 
 logger = logging.getLogger(__name__)
 
@@ -67,7 +67,6 @@ class DcmtkDicomClient(BaseDicomClient):
         dicom_tmp_dir=None,
         dcmtk_profile: str = "AllDICOM",
         timeout=20,
-        listener_port=str(11113),
         storescp_extra_args=None,
         movescu_extra_args=None,
         findscu_extra_args=None,
@@ -83,7 +82,6 @@ class DcmtkDicomClient(BaseDicomClient):
         :param dicom_tmp_dir: Root dir that stores temporary *.dcm files.
         :param dcmtk_profile: Profile name from storescp.cfg to use
         :param timeout: Connection and DICOM timeout in seconds
-        :param listener_port: Port to run the storescop listener on
         :param storescp_extra_args: Optional array of extra arguments to supply to the `storescp` invocation
         :param findscu_extra_args: Optional array of extra arguments to supply to the `findscu` invocation
         :param movescu_extra_args: Optional array of extra arguments to supply to the `movescu` invocation
@@ -118,7 +116,7 @@ class DcmtkDicomClient(BaseDicomClient):
         self.dicom_dir = dicom_dir
         self.dicom_tmp_dir = dicom_tmp_dir if dicom_tmp_dir else os.path.join(self.dicom_dir, 'tmp')
         self.timeout = timeout
-        self.listener_port = listener_port
+        self.listener_port = str(11113)
         self.storescp_extra_args = storescp_extra_args or []
         self.findscu_extra_args = findscu_extra_args or []
         self.movescu_extra_args = movescu_extra_args or []
@@ -133,25 +131,6 @@ class DcmtkDicomClient(BaseDicomClient):
         subprocess.run(['storescp', '--version'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
         subprocess.run(['movescu', '--version'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
         subprocess.run(['findscu', '--version'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=True)
-
-        # run 1 storescp listener at all times
-        os.makedirs(self.dicom_tmp_dir, exist_ok=True)
-        dcm_dict_dir = os.path.dirname(os.environ['DCMDICTPATH'])
-        if 'SCPCFGPATH' in os.environ:
-            storescp_config_path = os.environ['SCPCFGPATH']
-        else:
-            # fallback path typical to some dcmtk installations
-            storescp_config_path = os.path.join(dcm_dict_dir, '../../etc/dcmtk/storescp.cfg')
-
-        # TODO storescp logging is going to stdout: should have self.logger redirect
-        storescp_args = ['storescp', '--fork', '--aetitle', client_ae,
-                         *self.logger_args,
-                         '--output-directory', self.dicom_tmp_dir,
-                         '--filename-extension', '.dcm',
-                         '--config-file', storescp_config_path, self.dcmtk_profile,
-                         *self.storescp_extra_args,
-                         self.listener_port]
-        self.process = subprocess.Popen(storescp_args)
 
     def verify(self) -> bool:
         echoscu_args = ['echoscu', '--aetitle', self.remote_ae, '--call', self.client_ae,
@@ -225,8 +204,8 @@ class DcmtkDicomClient(BaseDicomClient):
         return result_datasets
 
     def _send_c_move(self, move_dataset, output_dir, is_retry=False):
-        if self.process.returncode is not None:
-            msg = 'dcmrecv is not running, rc {self.process.returncode}'
+        if not self.verify():
+            msg = 'Connection could not be made PACs, rc {self.process.returncode}'
             logger.error(msg)
             raise Exception(msg)
 
@@ -252,10 +231,18 @@ class DcmtkDicomClient(BaseDicomClient):
                 logger.debug(result.stdout)
                 logger.debug(result.stderr)
 
+                time_count = 0.0
+                while True:
+                    time.sleep(.2)
+                    time_count += .2
+                    if time_count > self.timeout:
+                        raise Exception('Timeout waiting for C-MOVE to finish')
+                    if os.listdir(self.dicom_tmp_dir):
+                        break
+
                 for result_item in os.listdir(self.dicom_tmp_dir):
                     # fully specify move destination to allow overwrites
-                    shutil.move(os.path.join(self.dicom_tmp_dir, result_item),
-                                os.path.join(output_dir, result_item))
+                    shutil.move(os.path.join(self.dicom_tmp_dir, result_item),os.path.join(output_dir))
 
             if result.returncode != 0:
                 logger.error(f'C-MOVE failure for query: rc {result.returncode}')
@@ -499,18 +486,16 @@ class DcmtkDicomClient(BaseDicomClient):
         move_dataset.QueryRetrieveLevel = 'IMAGE'
 
         success = self._send_c_move(move_dataset, self.dicom_dir)
-
         # dcmtk puts modality prefixes in front of the instance IDs
-        dcm_paths = glob.glob(os.path.join(self.dicom_dir, f'*{instance_id}.dcm'))
-        if not success or not dcm_paths:
+        png_paths = glob.glob(os.path.join(self.dicom_dir, f'*{instance_id}.png'))
+        if not success or not png_paths:
             logger.error(f'Failure to get thumbnail for {instance_id}')
             return None
-        if len(dcm_paths) > 1:
-            logger.error(f'Found duplicate thumbnails for {instance_id}: {dcm_paths}')
+        if len(png_paths) > 1:
+            logger.error(f'Found duplicate thumbnails for {instance_id}: {png_paths}')
             return None
 
-        dcm_path = dcm_paths[0]
-        png_path = process_and_write_png_from_file(dcm_path)
+        png_path = png_paths[0]
         return png_path
 
     def send_datasets(self, datasets: Iterable[Dataset], override_remote_ae: str = None,
