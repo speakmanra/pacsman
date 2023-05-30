@@ -6,26 +6,29 @@ spawned by PynetDicomClient.
 DCMDICTPATH and (depending on the installation) SCPCFGPATH envrionment variables are
 required.
 """
+import glob
 import logging
 import os
 import re
-import subprocess
-from subprocess import PIPE
 import shutil
+import subprocess
 import tempfile
 import threading
-import glob
-from collections import defaultdict
 import time
-
-from typing import List, Optional, Iterable, Tuple
+from collections import defaultdict
+from subprocess import PIPE
+from typing import Iterable, List, Optional, Tuple
 
 import pydicom
 from pydicom import dcmread
 from pydicom.dataset import Dataset
 
 from .base_client import BaseDicomClient
-from .utils import copy_dicom_attributes, set_undefined_tags_to_blank, dicom_filename
+from .utils import (
+    copy_dicom_attributes,
+    dicom_filename,
+    set_undefined_tags_to_blank,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -231,12 +234,12 @@ class DcmtkDicomClient(BaseDicomClient):
                 logger.debug(result.stdout)
                 logger.debug(result.stderr)
 
-                time_count = 0.0
+                timer = 0.0
                 while True:
                     time.sleep(.2)
-                    time_count += .2
-                    if time_count > self.timeout:
-                        raise Exception('Timeout waiting for C-MOVE to finish')
+                    timer += .2
+                    if timer > self.timeout:
+                        raise Exception(f'Timeout waiting for storescp node to finish moving cached files to {self.dicom_tmp_dir}')
                     if os.listdir(self.dicom_tmp_dir):
                         break
 
