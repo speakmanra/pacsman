@@ -246,7 +246,7 @@ class DcmtkDicomClient(BaseDicomClient):
                 for result_item in os.listdir(self.dicom_tmp_dir):
                     # fully specify move destination to allow overwrites
                     shutil.move(os.path.join(self.dicom_tmp_dir, result_item),
-                                os.path.join(output_dir, result_item))
+                                os.path.join(self.dicom_dir, result_item))
 
             if result.returncode != 0:
                 logger.error(f'C-MOVE failure for query: rc {result.returncode}')
