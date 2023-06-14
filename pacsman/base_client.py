@@ -127,11 +127,12 @@ class BaseDicomClient(ABC):
         raise NotImplementedError()
 
     @abstractmethod
-    def fetch_images_as_dicom_files(self, study_id: str, series_id: str) -> Optional[str]:
+    def fetch_images_as_dicom_files(self, study_id: str, series_id: str, acquisition_id: Optional[str] = None) -> Optional[str]:
         """
         Fetches series images from PACS with C-MOVE
         :param study_id: StudyInstanceUID from PACS
         :param series_id: SeriesInstanceUID from PACS
+        :param acquisition_id: AcquisitionNumber from PACS
         :return: a path to a directory full of dicom files on success, None if not found
         """
         raise NotImplementedError
