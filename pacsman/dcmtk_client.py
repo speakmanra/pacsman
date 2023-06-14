@@ -27,6 +27,7 @@ from .base_client import BaseDicomClient
 from .utils import (
     copy_dicom_attributes,
     dicom_filename,
+    process_and_write_png_from_file,
     set_undefined_tags_to_blank,
 )
 
@@ -238,8 +239,7 @@ class DcmtkDicomClient(BaseDicomClient):
                     time.sleep(.2)
                     timer += .2
                     if timer > self.timeout:
-                        raise Exception(
-                            f'Timeout waiting for storescp node to finish moving cached files to {self.dicom_tmp_dir}')
+                        raise Exception(f'Timeout waiting for storescp node to finish moving cached files to {self.dicom_tmp_dir}')
                     if os.listdir(self.dicom_tmp_dir):
                         break
 
@@ -426,8 +426,8 @@ class DcmtkDicomClient(BaseDicomClient):
                     break
         return image_datasets
 
-    def fetch_images_as_dicom_files(self, study_id: str, series_id: str) -> Optional[str]:
-        series_path = os.path.join(self.dicom_dir, series_id)
+    def fetch_images_as_dicom_files(self, study_id: str, series_id: str, acquisition_id) -> Optional[str]:
+        series_path = os.path.join(self.dicom_dir, f"{series_id}-{acquisition_id}")
 
         dataset = Dataset()
         dataset.SeriesInstanceUID = series_id
