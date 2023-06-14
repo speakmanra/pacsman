@@ -215,7 +215,6 @@ class DcmtkDicomClient(BaseDicomClient):
         with tempfile.TemporaryDirectory() as tmpdirname:
             move_dataset_path = os.path.join(tmpdirname, 'move_dataset.dcm')
 
-            os.makedirs(output_dir, exist_ok=True)
             move_dataset.is_little_endian = True
             move_dataset.is_implicit_VR = True
             pydicom.dcmwrite(move_dataset_path, move_dataset)
@@ -239,7 +238,8 @@ class DcmtkDicomClient(BaseDicomClient):
                     time.sleep(.2)
                     timer += .2
                     if timer > self.timeout:
-                        raise Exception(f'Timeout waiting for storescp node to finish moving cached files to {self.dicom_tmp_dir}')
+                        raise Exception(
+                            f'Timeout waiting for storescp node to finish moving cached files to {self.dicom_tmp_dir}')
                     if os.listdir(self.dicom_tmp_dir):
                         break
 
